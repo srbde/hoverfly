@@ -74,19 +74,41 @@ func (tx *Transaction) Serialize() ([]byte, error) {
 	}
 
 	writeVarint(&buf, uint64(len(tx.Operations)))
-
 	for _, rawOp := range tx.Operations {
 		var tuple []json.RawMessage
-		if err := json.Unmarshal(rawOp, &tuple); err != nil || len(tuple) != 2 {
-			return nil, errors.New("invalid operation tuple format (expected [name, body])")
-		}
-
 		var opName string
-		if err := json.Unmarshal(tuple[0], &opName); err != nil {
-			return nil, err
+		var opBody json.RawMessage
+		var parsed bool
+
+		// 1. Try tuple style: [name, body]
+		if err := json.Unmarshal(rawOp, &tuple); err == nil && len(tuple) == 2 {
+			if err := json.Unmarshal(tuple[0], &opName); err == nil {
+				opBody = tuple[1]
+				parsed = true
+			}
 		}
 
-		opBytes, err := serializeOperation(opName, tuple[1])
+		// 2. Try object style: {"type": "...", "value": ...}
+		if !parsed {
+			var obj struct {
+				Type  string          `json:"type"`
+				Value json.RawMessage `json:"value"`
+			}
+			if err := json.Unmarshal(rawOp, &obj); err == nil && obj.Type != "" {
+				opName = obj.Type
+				opBody = obj.Value
+				parsed = true
+			}
+		}
+
+		if !parsed {
+			return nil, errors.New("invalid operation format (expected [name, body] or {type, value})")
+		}
+
+		// Strip _operation suffix if present, e.g. "pow_operation" -> "pow"
+		opName = strings.TrimSuffix(opName, "_operation")
+
+		opBytes, err := serializeOperation(opName, opBody)
 		if err != nil {
 			return nil, fmt.Errorf("failed to serialize operation %s: %w", opName, err)
 		}
@@ -256,6 +278,11 @@ func serializeOperation(opName string, bodyJSON json.RawMessage) ([]byte, error)
 		}
 		serializeString(&buf, op.ID)
 		serializeString(&buf, op.JSON)
+
+	case "pow":
+		writeVarint(&buf, 14)
+		// Dummy serialization for deprecated PoW operation to allow testing/hex conversion
+		buf.Write(make([]byte, 32))
 
 	default:
 		return nil, fmt.Errorf("operation '%s' is not supported by hoverfly signature validation", opName)

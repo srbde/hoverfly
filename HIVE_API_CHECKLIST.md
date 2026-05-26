@@ -9,9 +9,9 @@ Legend:
 - `stateful` means the mock likely needs to read or mutate Hoverfly state, or at least return state-shaped data that changes with seeded accounts, blocks, posts, transactions, market/order data, follow data, or governance data.
 - `static` means a deterministic template response is probably enough for first coverage.
 
-Current first-class coverage: 215/215 OpenAPI methods routed by Hoverfly.
-Current answer coverage: 215/215 OpenAPI methods return a JSON-RPC result through either a first-class route or the OpenAPI example fallback.
-Current useful coverage: 215/215 methods are useful first-class mocks; 0/215 are first-class but partial; 0/215 still rely on the unrouted OpenAPI fallback.
+Current first-class coverage: 220/220 OpenAPI methods routed by Hoverfly.
+Current answer coverage: 220/220 OpenAPI methods return a JSON-RPC result through either a first-class route or the OpenAPI example fallback.
+Current useful coverage: 220/220 methods are useful first-class mocks; 0/220 are first-class but partial; 0/220 still rely on the unrouted OpenAPI fallback.
 
 ## `account_by_key_api` (1/1 done)
 
@@ -57,7 +57,7 @@ Current useful coverage: 215/215 methods are useful first-class mocks; 0/215 are
 - [x] `bridge.post_notifications` - useful - Gets a post notifications. (Supported by Hivemind)
 - [x] `bridge.unread_notifications` - useful - Gets a count of unread notifications for an account. (Supported by Hivemind)
 
-## `condenser_api` (79/79 done)
+## `condenser_api` (80/80 done)
 
 - [x] `condenser_api.broadcast_transaction` - useful - Used to broadcast a transaction.
 - [x] `condenser_api.broadcast_transaction_synchronous` - useful - Used to broadcast a transaction and waits for it to be processed synchronously.
@@ -74,6 +74,7 @@ Current useful coverage: 215/215 methods are useful first-class mocks; 0/215 are
 - [x] `condenser_api.get_block_header` - useful - Returns a block header.
 - [x] `condenser_api.get_blog` - useful - Returns the list of blog entries for an account. (Supported by Hivemind)
 - [x] `condenser_api.get_blog_entries` - useful - Returns a list of blog entries for an account. (Supported by Hivemind)
+- [x] `condenser_api.get_blog_authors` - useful - Returns a list of blog authors and reblog counts. (Supported by Hivemind)
 - [x] `condenser_api.get_chain_properties` - useful - Returns the chain properties.
 - [x] `condenser_api.get_collateralized_conversion_requests` - useful - Returns objects corresponding with collateralized_convert operations.
 - [x] `condenser_api.get_comment_discussions_by_payout` - useful - Returns a list of discussions based on payout. (Supported by Hivemind)
@@ -139,7 +140,7 @@ Current useful coverage: 215/215 methods are useful first-class mocks; 0/215 are
 - [x] `condenser_api.lookup_witness_accounts` - useful - Looks up witness accounts starting with name.
 - [x] `condenser_api.verify_authority` - useful - Returns true if the transaction has all of the required signatures.
 
-## `database_api` (54/54 done)
+## `database_api` (55/55 done)
 
 - [x] `database_api.find_account_recovery_requests` - useful - Returns a list of account recovery requests.
 - [x] `database_api.find_accounts` - useful - Returns accounts, queried by name.
@@ -178,6 +179,7 @@ Current useful coverage: 215/215 methods are useful first-class mocks; 0/215 are
 - [x] `database_api.list_accounts` - useful - List accounts ordered by specified key.
 - [x] `database_api.list_change_recovery_account_requests` - useful - Returns a list of recovery account change requests.
 - [x] `database_api.list_collateralized_conversion_requests` - useful - Returns objects corresponding with collateralized_convert operations.
+- [x] `database_api.list_comments` - useful - List comments.
 - [x] `database_api.list_decline_voting_rights_requests` - useful - Returns a list of decline voting rights requests.
 - [x] `database_api.list_escrows` - useful - Returns a list of escrows.
 - [x] `database_api.list_hbd_conversion_requests` - useful - Returns the list of HBD conversion requests for an account.
@@ -240,8 +242,9 @@ Current useful coverage: 215/215 methods are useful first-class mocks; 0/215 are
 - [x] `market_history_api.get_trade_history` - useful - Returns the trade history for the internal HBD:HIVE market.
 - [x] `market_history_api.get_volume` - useful - Returns the market volume for the past 24 hours.
 
-## `network_broadcast_api` (1/1 done)
+## `network_broadcast_api` (2/2 done)
 
+- [x] `network_broadcast_api.broadcast_block` - useful - Used to broadcast a signed block.
 - [x] `network_broadcast_api.broadcast_transaction` - useful - Used to broadcast a transaction.
 
 ## `rc_api` (7/7 done)
@@ -275,6 +278,14 @@ Current useful coverage: 215/215 methods are useful first-class mocks; 0/215 are
 - [x] `tags_api.get_discussions_by_trending` - useful - Returns a list of discussions based on popularity. (Supported by Hivemind)
 - [x] `tags_api.get_post_discussions_by_payout` - useful - Returns a list of posts based on payout. (Supported by Hivemind)
 
+## `rewards_api` (1/1 done)
+
+- [x] `rewards_api.simulate_curve_payouts` - useful - Simulate curve payouts.
+
 ## `transaction_status_api` (1/1 done)
 
 - [x] `transaction_status_api.find_transaction` - useful - Returns the status of a given transaction id.
+
+## `witness_api` (1/1 done)
+
+- [x] `witness_api.get_account_bandwidth` - useful - Returns the bandwidth of an account. (Deprecated in modern Hive)

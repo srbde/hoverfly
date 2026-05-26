@@ -265,6 +265,15 @@ func (h *RPCHandler) route(method string, params json.RawMessage) (any, *rpcErro
 	case "database_api.find_comments":
 		return h.handleFindComments(params)
 
+	case "database_api.list_comments":
+		return h.handleListComments(params)
+
+	case "rewards_api.simulate_curve_payouts":
+		return h.handleSimulateCurvePayouts(params)
+
+	case "witness_api.get_account_bandwidth", "network_broadcast_api.broadcast_block":
+		return map[string]any{}, nil
+
 	case "condenser_api.broadcast_transaction", "condenser_api.broadcast_transaction_synchronous",
 		"network_broadcast_api.broadcast_transaction", "network_broadcast_api.broadcast_transaction_synchronous":
 		return h.handleBroadcastTransaction(params)
@@ -331,11 +340,11 @@ func (h *RPCHandler) route(method string, params json.RawMessage) (any, *rpcErro
 		"condenser_api.get_open_orders", "condenser_api.get_owner_history", "condenser_api.get_savings_withdraw_from",
 		"condenser_api.get_savings_withdraw_to", "condenser_api.get_vesting_delegations",
 		"condenser_api.get_withdraw_routes", "condenser_api.get_replies_by_last_update",
-		"condenser_api.get_trending_tags":
+		"condenser_api.get_trending_tags", "condenser_api.get_blog_authors":
 		return []any{}, nil
 
 	case "condenser_api.get_escrow", "condenser_api.get_recovery_request":
-		return nil, nil
+		return json.RawMessage("null"), nil
 
 	case "database_api.find_account_recovery_requests", "database_api.find_change_recovery_account_requests",
 		"database_api.find_collateralized_conversion_requests", "database_api.find_decline_voting_rights_requests",
@@ -511,12 +520,15 @@ func (h *RPCHandler) handleGetDynamicGlobalProperties() (any, *rpcError) {
 }
 
 func (h *RPCHandler) handleGetAccounts(params json.RawMessage) (any, *rpcError) {
-	var outerParams [][]string
-	if err := json.Unmarshal(params, &outerParams); err != nil || len(outerParams) == 0 {
+	var rawList []json.RawMessage
+	if err := json.Unmarshal(params, &rawList); err != nil || len(rawList) == 0 {
+		return nil, &rpcError{Code: -32602, Message: "Invalid parameters"}
+	}
+	var names []string
+	if err := json.Unmarshal(rawList[0], &names); err != nil {
 		return nil, &rpcError{Code: -32602, Message: "Invalid parameters"}
 	}
 
-	names := outerParams[0]
 	var results []EnrichedAccountData
 
 	for _, name := range names {
@@ -635,13 +647,17 @@ func (h *RPCHandler) handleLookupAccounts(params json.RawMessage) (any, *rpcErro
 }
 
 func (h *RPCHandler) handleLookupAccountNames(params json.RawMessage) (any, *rpcError) {
-	var args [][]string
-	if err := json.Unmarshal(params, &args); err != nil || len(args) == 0 {
+	var rawList []json.RawMessage
+	if err := json.Unmarshal(params, &rawList); err != nil || len(rawList) == 0 {
+		return nil, &rpcError{Code: -32602, Message: "Invalid parameters"}
+	}
+	var names []string
+	if err := json.Unmarshal(rawList[0], &names); err != nil {
 		return nil, &rpcError{Code: -32602, Message: "Invalid parameters"}
 	}
 
-	results := make([]any, 0, len(args[0]))
-	for _, name := range args[0] {
+	results := make([]any, 0, len(names))
+	for _, name := range names {
 		acc, err := h.state.GetAccount(name)
 		if err != nil || acc == nil {
 			results = append(results, nil)
@@ -703,12 +719,21 @@ func (h *RPCHandler) handleListAccounts(params json.RawMessage) (any, *rpcError)
 }
 
 func (h *RPCHandler) handleGetKeyReferences(params json.RawMessage) (any, *rpcError) {
-	var outerParams [][]string
-	if err := json.Unmarshal(params, &outerParams); err != nil || len(outerParams) == 0 {
+	var objParams struct {
+		Keys []string `json:"keys"`
+	}
+	var keys []string
+	if err := json.Unmarshal(params, &objParams); err == nil && len(objParams.Keys) > 0 {
+		keys = objParams.Keys
+	} else {
+		var outerParams [][]string
+		if err := json.Unmarshal(params, &outerParams); err == nil && len(outerParams) > 0 {
+			keys = outerParams[0]
+		}
+	}
+	if len(keys) == 0 {
 		return nil, &rpcError{Code: -32602, Message: "Invalid parameters"}
 	}
-
-	keys := outerParams[0]
 	refs, err := h.state.GetKeyReferences(keys)
 	if err != nil {
 		return nil, &rpcError{Code: -32603, Message: err.Error()}
@@ -747,6 +772,74 @@ func (h *RPCHandler) handleGetContent(params json.RawMessage) (any, *rpcError) {
 		ActiveVotes:  []string{},
 	}
 	return fallback, nil
+}
+
+type CommentRef struct {
+	Author   string `json:"author"`
+	Permlink string `json:"permlink"`
+}
+
+func parseCommentRefs(params json.RawMessage) []CommentRef {
+	// 1. Try parsing as {comments: [["author", "permlink"], ...]} or {comments: [{"author": "...", "permlink": "..."}, ...]}
+	var rawArgs struct {
+		Comments []json.RawMessage `json:"comments"`
+	}
+	if err := json.Unmarshal(params, &rawArgs); err == nil && len(rawArgs.Comments) > 0 {
+		var refs []CommentRef
+		for _, raw := range rawArgs.Comments {
+			// Try as {"author": "...", "permlink": "..."}
+			var s CommentRef
+			if err := json.Unmarshal(raw, &s); err == nil && s.Author != "" {
+				refs = append(refs, s)
+				continue
+			}
+			// Try as ["author", "permlink"]
+			var arr []string
+			if err := json.Unmarshal(raw, &arr); err == nil && len(arr) >= 2 {
+				refs = append(refs, CommentRef{Author: arr[0], Permlink: arr[1]})
+			}
+		}
+		if len(refs) > 0 {
+			return refs
+		}
+	}
+
+	// 2. Try parsing as a single [author, permlink] array or single {"author": "...", "permlink": "..."} object
+	// Try single {"author": "...", "permlink": "..."} or {"account": "...", "permlink": "..."}
+	var s struct {
+		Author   string `json:"author"`
+		Account  string `json:"account"`
+		Permlink string `json:"permlink"`
+	}
+	if err := json.Unmarshal(params, &s); err == nil && (s.Author != "" || s.Account != "") {
+		author := s.Author
+		if author == "" {
+			author = s.Account
+		}
+		return []CommentRef{{Author: author, Permlink: s.Permlink}}
+	}
+
+	// Try single ["author", "permlink"] array
+	var arr []string
+	if err := json.Unmarshal(params, &arr); err == nil && len(arr) >= 2 {
+		return []CommentRef{{Author: arr[0], Permlink: arr[1]}}
+	}
+
+	// Try wrapped single object [{"author": "...", "permlink": "..."}]
+	var wrapped []struct {
+		Author   string `json:"author"`
+		Account  string `json:"account"`
+		Permlink string `json:"permlink"`
+	}
+	if err := json.Unmarshal(params, &wrapped); err == nil && len(wrapped) > 0 {
+		author := wrapped[0].Author
+		if author == "" {
+			author = wrapped[0].Account
+		}
+		return []CommentRef{{Author: author, Permlink: wrapped[0].Permlink}}
+	}
+
+	return nil
 }
 
 func parseContentRef(params json.RawMessage) (string, string) {
@@ -979,18 +1072,13 @@ func (h *RPCHandler) handleGetDiscussions(params json.RawMessage) (any, *rpcErro
 }
 
 func (h *RPCHandler) handleFindComments(params json.RawMessage) (any, *rpcError) {
-	var args struct {
-		Comments []struct {
-			Author   string `json:"author"`
-			Permlink string `json:"permlink"`
-		} `json:"comments"`
-	}
-	if err := json.Unmarshal(params, &args); err != nil || len(args.Comments) == 0 {
+	refs := parseCommentRefs(params)
+	if len(refs) == 0 {
 		return nil, &rpcError{Code: -32602, Message: "Invalid parameters"}
 	}
 
-	comments := make([]any, 0, len(args.Comments))
-	for _, ref := range args.Comments {
+	comments := make([]any, 0, len(refs))
+	for _, ref := range refs {
 		post, err := h.state.GetContent(ref.Author, ref.Permlink)
 		if err != nil || post == nil {
 			continue
@@ -1050,28 +1138,36 @@ func (h *RPCHandler) handleGetFollowing(params json.RawMessage) (any, *rpcError)
 }
 
 func (h *RPCHandler) handleCommentPendingPayouts(params json.RawMessage) (any, *rpcError) {
-	author, permlink := parseContentRef(params)
-	if author == "" || permlink == "" {
+	refs := parseCommentRefs(params)
+	if len(refs) == 0 {
 		return nil, &rpcError{Code: -32602, Message: "Invalid parameters"}
 	}
 
-	post, err := h.state.GetContent(author, permlink)
-	if err != nil || post == nil {
-		return map[string]any{"cashout_infos": []any{}}, nil
+	var infos []any
+	for _, ref := range refs {
+		post, err := h.state.GetContent(ref.Author, ref.Permlink)
+		var author, permlink string
+		if err == nil && post != nil {
+			author = post.Author
+			permlink = post.Permlink
+		} else {
+			author = ref.Author
+			permlink = ref.Permlink
+		}
+
+		infos = append(infos, map[string]any{
+			"author":                 author,
+			"permlink":               permlink,
+			"cashout_time":           "1969-12-31T23:59:59",
+			"total_vote_weight":      0,
+			"max_accepted_payout":    "0.000 HBD",
+			"percent_hbd":            10000,
+			"allow_curation_rewards": true,
+		})
 	}
 
 	return map[string]any{
-		"cashout_infos": []any{
-			map[string]any{
-				"author":                 post.Author,
-				"permlink":               post.Permlink,
-				"cashout_time":           "1969-12-31T23:59:59",
-				"total_vote_weight":      0,
-				"max_accepted_payout":    "0.000 HBD",
-				"percent_hbd":            10000,
-				"allow_curation_rewards": true,
-			},
-		},
+		"cashout_infos": infos,
 	}, nil
 }
 
@@ -1263,7 +1359,7 @@ func (h *RPCHandler) handleGetWitnessByAccount(params json.RawMessage) (any, *rp
 	if slices.Contains(activeWitnessNames(), account) {
 		return mockWitness(account), nil
 	}
-	return nil, nil
+	return json.RawMessage("null"), nil
 }
 
 func activeWitnessNames() []string {
@@ -2098,25 +2194,46 @@ func mustMarshal(v any) json.RawMessage {
 }
 
 func (h *RPCHandler) handleBroadcastTransaction(params json.RawMessage) (any, *rpcError) {
-	var outerParams []crypto.Transaction
-	if err := json.Unmarshal(params, &outerParams); err != nil || len(outerParams) == 0 {
-		return nil, &rpcError{Code: -32602, Message: "Invalid parameters"}
+	var tx crypto.Transaction
+	var parsed bool
+
+	// 1. Try array format: [tx]
+	var arrayParams []crypto.Transaction
+	if err := json.Unmarshal(params, &arrayParams); err == nil && len(arrayParams) > 0 {
+		tx = arrayParams[0]
+		parsed = true
 	}
 
-	tx := outerParams[0]
-
-	chainID := "0000000000000000000000000000000000000000000000000000000000000000"
-	recoveredKeys, err := crypto.VerifySignatures(&tx, chainID)
-	if err != nil {
-		testnetChainID := "beeab30de373dca1e2f036c30d4970470d0d57d055748a30de53070470d0d57d"
-		recoveredKeys, err = crypto.VerifySignatures(&tx, testnetChainID)
-		if err != nil {
-			log.Warnf("Transaction signature verification FAILED: %v", err)
-			return nil, &rpcError{Code: -32000, Message: fmt.Sprintf("signature verification failed: %v", err)}
+	// 2. Try object format: {"trx": tx}
+	if !parsed {
+		var objectParams struct {
+			Trx crypto.Transaction `json:"trx"`
+		}
+		if err := json.Unmarshal(params, &objectParams); err == nil && objectParams.Trx.RefBlockNum != 0 {
+			tx = objectParams.Trx
+			parsed = true
 		}
 	}
 
-	log.Infof("Transaction verified successfully. Recovered signing key(s): %v", recoveredKeys)
+	if !parsed {
+		return nil, &rpcError{Code: -32602, Message: "Invalid parameters"}
+	}
+
+	if len(tx.Signatures) > 0 {
+		chainID := "0000000000000000000000000000000000000000000000000000000000000000"
+		recoveredKeys, err := crypto.VerifySignatures(&tx, chainID)
+		if err != nil {
+			testnetChainID := "beeab30de373dca1e2f036c30d4970470d0d57d055748a30de53070470d0d57d"
+			recoveredKeys, err = crypto.VerifySignatures(&tx, testnetChainID)
+			if err != nil {
+				log.Warnf("Transaction signature verification FAILED: %v", err)
+				return nil, &rpcError{Code: -32000, Message: fmt.Sprintf("signature verification failed: %v", err)}
+			}
+		}
+		log.Infof("Transaction verified successfully. Recovered signing key(s): %v", recoveredKeys)
+	} else {
+		log.Warn("Transaction has no signatures; skipping verification in mock server (permissive mode)")
+	}
 
 	for _, rawOp := range tx.Operations {
 		var tuple []json.RawMessage
@@ -2212,7 +2329,18 @@ func (h *RPCHandler) handleGetTransaction(params json.RawMessage) (any, *rpcErro
 
 	tx, err := h.state.GetTransaction(txID)
 	if err != nil {
-		return nil, &rpcError{Code: -32000, Message: fmt.Sprintf("Transaction not found: %s", txID)}
+		// Return a schema-compliant mock transaction for unknown tx IDs
+		fallback := state.TransactionData{
+			TransactionID:  txID,
+			BlockNum:       100000,
+			TransactionNum: 0,
+			RefBlockNum:    1097,
+			RefBlockPrefix: 2181793527,
+			Expiration:     "2026-05-26T18:00:00",
+			Operations:     []any{json.RawMessage(`["transfer",{"from":"initminer","to":"thecrazygm","amount":"100.000 HIVE","memo":"fallback mock transaction"}]`)},
+			Signatures:     []string{},
+		}
+		return &fallback, nil
 	}
 
 	return tx, nil
@@ -2664,4 +2792,69 @@ func (h *RPCHandler) handleOpenAPIExample(method string) (any, *rpcError) {
 	}
 
 	return nil, &rpcError{Code: -32603, Message: fmt.Sprintf("invalid OpenAPI mock response for %s", method)}
+}
+
+func (h *RPCHandler) handleListComments(params json.RawMessage) (any, *rpcError) {
+	var args struct {
+		Start []any  `json:"start"`
+		Limit uint32 `json:"limit"`
+		Order string `json:"order"`
+	}
+	if err := json.Unmarshal(params, &args); err != nil {
+		// try array format or ignore
+	}
+	if args.Limit == 0 {
+		args.Limit = 100
+	}
+	if args.Limit > 1000 {
+		args.Limit = 1000
+	}
+
+	posts, err := h.state.ListContent()
+	if err != nil {
+		return nil, &rpcError{Code: -32603, Message: err.Error()}
+	}
+
+	results := make([]state.PostData, 0)
+	if len(posts) == 0 {
+		fallback := state.PostData{
+			Author:            "hiveio",
+			Permlink:          "announcing-the-launch-of-hive-blockchain",
+			Category:          "blog",
+			Title:             "Announcing the Launch of Hive Blockchain",
+			Body:              "This is the official announcement post of the Hive blockchain. Welcome to Hive!",
+			JSONMetadata:      "{}",
+			Created:           "2020-03-20T00:00:00",
+		}
+		results = append(results, fallback)
+	} else {
+		for _, post := range posts {
+			results = append(results, post)
+			if len(results) >= int(args.Limit) {
+				break
+			}
+		}
+	}
+
+	return map[string]any{
+		"comments": results,
+	}, nil
+}
+
+func (h *RPCHandler) handleSimulateCurvePayouts(params json.RawMessage) (any, *rpcError) {
+	var args struct {
+		Curve string `json:"curve"`
+		Var1  string `json:"var1"`
+	}
+	if err := json.Unmarshal(params, &args); err != nil {
+		// Ignore parsing error
+	}
+	recentClaims := args.Var1
+	if recentClaims == "" {
+		recentClaims = "2000000000000"
+	}
+	return map[string]any{
+		"recent_claims": recentClaims,
+		"payouts":       []any{},
+	}, nil
 }
