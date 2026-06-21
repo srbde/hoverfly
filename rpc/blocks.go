@@ -33,16 +33,43 @@ func (h *RPCHandler) handleGetBlock(params json.RawMessage, method string) (any,
 		}
 	}
 
+	allTransactions, err := h.state.ListTransactions()
+	if err != nil {
+		return nil, &rpcError{Code: -32603, Message: err.Error()}
+	}
+
+	transactions := make([]any, 0)
+	transactionIDs := make([]string, 0)
+	for _, tx := range allTransactions {
+		if tx.BlockNum != blockNum {
+			continue
+		}
+		transactions = append(transactions, map[string]any{
+			"ref_block_num":    tx.RefBlockNum,
+			"ref_block_prefix": tx.RefBlockPrefix,
+			"expiration":       tx.Expiration,
+			"operations":       tx.Operations,
+			"extensions":       tx.Extensions,
+			"signatures":       tx.Signatures,
+		})
+		transactionIDs = append(transactionIDs, tx.TransactionID)
+	}
+
+	previousBlockNum := blockNum
+	if previousBlockNum > 0 {
+		previousBlockNum--
+	}
+
 	blockObj := map[string]any{
-		"block_id":                fmt.Sprintf("05f5e100f72d57fd5a542459a94f3a8153c68c%02d", blockNum%100),
-		"previous":                "05f5e0fff72d57fd5a542459a94f3a8153c68c4a",
+		"block_id":                state.BlockID(blockNum),
+		"previous":                state.BlockID(previousBlockNum),
 		"timestamp":               time.Now().UTC().Format("2006-01-02T15:04:05"),
 		"witness":                 "blocktrades",
 		"transaction_merkle_root": "0000000000000000000000000000000000000000",
 		"extensions":              []any{},
 		"witness_signature":       "207f...mock...sig",
-		"transactions":            []any{},
-		"transaction_ids":         []any{},
+		"transactions":            transactions,
+		"transaction_ids":         transactionIDs,
 		"signing_key":             "STM6ipXFLZyBeJRLFkXNRzAeQDz5T9zawSzYUdMShPsBHqB9W4SaC",
 	}
 
@@ -77,8 +104,12 @@ func (h *RPCHandler) handleGetBlockHeader(params json.RawMessage, method string)
 		}
 	}
 
+	previousBlockNum := blockNum
+	if previousBlockNum > 0 {
+		previousBlockNum--
+	}
 	headerObj := map[string]any{
-		"previous":                fmt.Sprintf("05f5e100f72d57fd5a542459a94f3a8153c68c%02d", (blockNum-1)%100),
+		"previous":                state.BlockID(previousBlockNum),
 		"timestamp":               time.Now().UTC().Format("2006-01-02T15:04:05"),
 		"witness":                 "blocktrades",
 		"transaction_merkle_root": "0000000000000000000000000000000000000000",

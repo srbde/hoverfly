@@ -163,6 +163,12 @@ func (h *RPCHandler) initRoutes() {
 	}
 
 	// Blocks & History
+	dynamicProps := func(_ json.RawMessage) (any, *rpcError) {
+		return h.handleGetDynamicGlobalProperties()
+	}
+	h.routes["condenser_api.get_dynamic_global_properties"] = dynamicProps
+	h.routes["database_api.get_dynamic_global_properties"] = dynamicProps
+
 	h.routes["condenser_api.get_block"] = func(p json.RawMessage) (any, *rpcError) { return h.handleGetBlock(p, "condenser_api.get_block") }
 	h.routes["database_api.get_block"] = func(p json.RawMessage) (any, *rpcError) { return h.handleGetBlock(p, "database_api.get_block") }
 	h.routes["block_api.get_block"] = func(p json.RawMessage) (any, *rpcError) { return h.handleGetBlock(p, "block_api.get_block") }

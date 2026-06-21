@@ -71,7 +71,7 @@ func main() {
 				props.HeadBlockNumber++
 				props.LastIrreversibleBlockNum = props.HeadBlockNumber - 10
 				props.Time = time.Now().UTC().Format("2006-01-02T15:04:05")
-				props.HeadBlockID = fmt.Sprintf("05f5e100f72d57fd5a542459a94f3a8153c68c%02d", props.HeadBlockNumber%100)
+				props.HeadBlockID = state.BlockID(props.HeadBlockNumber)
 				s.SaveDynamicProperties(props)
 			}
 		}

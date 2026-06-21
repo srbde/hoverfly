@@ -172,13 +172,13 @@ func (h *RPCHandler) handleBroadcastTransaction(params json.RawMessage) (any, *r
 	// Save transaction to state for later polling (get_transaction)
 	var ops []any
 	for _, rawOp := range tx.Operations {
-		var op []any
+		var op any
 		if err := json.Unmarshal(rawOp, &op); err == nil {
 			ops = append(ops, op)
 		}
 	}
 
-	h.state.SaveTransaction(&state.TransactionData{
+	if err := h.state.SaveTransaction(&state.TransactionData{
 		TransactionID:  txID,
 		BlockNum:       blockNum,
 		TransactionNum: 1,
@@ -188,7 +188,9 @@ func (h *RPCHandler) handleBroadcastTransaction(params json.RawMessage) (any, *r
 		Operations:     ops,
 		Extensions:     tx.Extensions,
 		Signatures:     tx.Signatures,
-	})
+	}); err != nil {
+		return nil, &rpcError{Code: -32603, Message: fmt.Sprintf("failed to save transaction: %v", err)}
+	}
 
 	return map[string]any{
 		"id":        txID,

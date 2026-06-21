@@ -74,6 +74,13 @@ type TransactionData struct {
 	Signatures     []string `json:"signatures"`
 }
 
+// BlockID returns a deterministic Hive-style block ID whose first four bytes
+// encode the block height in big-endian order.
+func BlockID(blockNum uint32) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("hoverfly-block-%d", blockNum)))
+	return fmt.Sprintf("%08x%x", blockNum, digest[:16])
+}
+
 type State struct {
 	db *badger.DB
 }
@@ -122,7 +129,7 @@ func (s *State) seedDefaults() error {
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			props := DynamicProperties{
 				HeadBlockNumber:          100000000,
-				HeadBlockID:              "05f5e100f72d57fd5a542459a94f3a8153c68c4a",
+				HeadBlockID:              BlockID(100000000),
 				Time:                     time.Now().UTC().Format("2006-01-02T15:04:05"),
 				LastIrreversibleBlockNum: 99999990,
 				TotalVestingFundHive:     "200000000.000 HIVE",
