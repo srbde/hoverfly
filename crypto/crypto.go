@@ -56,6 +56,90 @@ type Transaction struct {
 	Signatures     []string          `json:"signatures"`
 }
 
+// Asset accepts both Hive's legacy "1.000 HIVE" representation and the
+// appbase representation used by current client libraries.
+type Asset string
+
+func (a *Asset) UnmarshalJSON(data []byte) error {
+	var legacy string
+	if err := json.Unmarshal(data, &legacy); err == nil {
+		*a = Asset(legacy)
+		return nil
+	}
+
+	var appbase struct {
+		Amount    string `json:"amount"`
+		Precision uint8  `json:"precision"`
+		NAI       string `json:"nai"`
+	}
+	if err := json.Unmarshal(data, &appbase); err == nil && appbase.Amount != "" {
+		formatted, err := formatAppbaseAsset(appbase.Amount, appbase.Precision, appbase.NAI)
+		if err != nil {
+			return err
+		}
+		*a = Asset(formatted)
+		return nil
+	}
+
+	var appbaseArray []json.RawMessage
+	if err := json.Unmarshal(data, &appbaseArray); err == nil && len(appbaseArray) == 3 {
+		var amount, nai string
+		var precision uint8
+		if err := json.Unmarshal(appbaseArray[0], &amount); err != nil {
+			return fmt.Errorf("invalid appbase asset amount: %w", err)
+		}
+		if err := json.Unmarshal(appbaseArray[1], &precision); err != nil {
+			return fmt.Errorf("invalid appbase asset precision: %w", err)
+		}
+		if err := json.Unmarshal(appbaseArray[2], &nai); err != nil {
+			return fmt.Errorf("invalid appbase asset NAI: %w", err)
+		}
+		formatted, err := formatAppbaseAsset(amount, precision, nai)
+		if err != nil {
+			return err
+		}
+		*a = Asset(formatted)
+		return nil
+	}
+
+	return fmt.Errorf("invalid asset: %s", data)
+}
+
+func (a Asset) String() string {
+	return string(a)
+}
+
+func formatAppbaseAsset(amount string, precision uint8, nai string) (string, error) {
+	symbols := map[string]string{
+		"@@000000013": "HBD",
+		"@@000000021": "HIVE",
+		"@@000000037": "VESTS",
+	}
+	symbol, ok := symbols[nai]
+	if !ok {
+		return "", fmt.Errorf("unsupported asset NAI: %s", nai)
+	}
+
+	value, err := strconv.ParseInt(amount, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("invalid appbase asset amount %q: %w", amount, err)
+	}
+	scale := int64(1)
+	for range precision {
+		scale *= 10
+	}
+
+	sign := ""
+	if value < 0 {
+		sign = "-"
+		value = -value
+	}
+	if precision == 0 {
+		return fmt.Sprintf("%s%d %s", sign, value, symbol), nil
+	}
+	return fmt.Sprintf("%s%d.%0*d %s", sign, value/scale, precision, value%scale, symbol), nil
+}
+
 func (tx *Transaction) Serialize() ([]byte, error) {
 	var buf bytes.Buffer
 
@@ -78,38 +162,10 @@ func (tx *Transaction) Serialize() ([]byte, error) {
 
 	writeVarint(&buf, uint64(len(tx.Operations)))
 	for _, rawOp := range tx.Operations {
-		var tuple []json.RawMessage
-		var opName string
-		var opBody json.RawMessage
-		var parsed bool
-
-		// 1. Try tuple style: [name, body]
-		if err := json.Unmarshal(rawOp, &tuple); err == nil && len(tuple) == 2 {
-			if err := json.Unmarshal(tuple[0], &opName); err == nil {
-				opBody = tuple[1]
-				parsed = true
-			}
+		opName, opBody, err := ParseOperation(rawOp)
+		if err != nil {
+			return nil, err
 		}
-
-		// 2. Try object style: {"type": "...", "value": ...}
-		if !parsed {
-			var obj struct {
-				Type  string          `json:"type"`
-				Value json.RawMessage `json:"value"`
-			}
-			if err := json.Unmarshal(rawOp, &obj); err == nil && obj.Type != "" {
-				opName = obj.Type
-				opBody = obj.Value
-				parsed = true
-			}
-		}
-
-		if !parsed {
-			return nil, errors.New("invalid operation format (expected [name, body] or {type, value})")
-		}
-
-		// Strip _operation suffix if present, e.g. "pow_operation" -> "pow"
-		opName = strings.TrimSuffix(opName, "_operation")
 
 		opBytes, err := serializeOperation(opName, opBody)
 		if err != nil {
@@ -121,6 +177,28 @@ func (tx *Transaction) Serialize() ([]byte, error) {
 	buf.WriteByte(0)
 
 	return buf.Bytes(), nil
+}
+
+// ParseOperation normalizes both legacy tuple operations and appbase object
+// operations to a bare operation name and JSON body.
+func ParseOperation(rawOp json.RawMessage) (string, json.RawMessage, error) {
+	var tuple []json.RawMessage
+	if err := json.Unmarshal(rawOp, &tuple); err == nil && len(tuple) == 2 {
+		var opName string
+		if err := json.Unmarshal(tuple[0], &opName); err == nil {
+			return strings.TrimSuffix(opName, "_operation"), tuple[1], nil
+		}
+	}
+
+	var object struct {
+		Type  string          `json:"type"`
+		Value json.RawMessage `json:"value"`
+	}
+	if err := json.Unmarshal(rawOp, &object); err == nil && object.Type != "" && len(object.Value) > 0 {
+		return strings.TrimSuffix(object.Type, "_operation"), object.Value, nil
+	}
+
+	return "", nil, errors.New("invalid operation format (expected [name, body] or {type, value})")
 }
 
 func writeVarint(buf *bytes.Buffer, val uint64) {
@@ -229,7 +307,7 @@ func serializeOperation(opName string, bodyJSON json.RawMessage) ([]byte, error)
 		var op struct {
 			From   string `json:"from"`
 			To     string `json:"to"`
-			Amount string `json:"amount"`
+			Amount Asset  `json:"amount"`
 			Memo   string `json:"memo"`
 		}
 		if err := json.Unmarshal(bodyJSON, &op); err != nil {
@@ -237,7 +315,7 @@ func serializeOperation(opName string, bodyJSON json.RawMessage) ([]byte, error)
 		}
 		serializeString(&buf, op.From)
 		serializeString(&buf, op.To)
-		if err := serializeAsset(&buf, op.Amount); err != nil {
+		if err := serializeAsset(&buf, op.Amount.String()); err != nil {
 			return nil, err
 		}
 		serializeString(&buf, op.Memo)
@@ -247,7 +325,7 @@ func serializeOperation(opName string, bodyJSON json.RawMessage) ([]byte, error)
 		var op struct {
 			From   string `json:"from"`
 			To     string `json:"to"`
-			Amount string `json:"amount"`
+			Amount Asset  `json:"amount"`
 			Memo   string `json:"memo"`
 		}
 		if err := json.Unmarshal(bodyJSON, &op); err != nil {
@@ -255,7 +333,7 @@ func serializeOperation(opName string, bodyJSON json.RawMessage) ([]byte, error)
 		}
 		serializeString(&buf, op.From)
 		serializeString(&buf, op.To)
-		if err := serializeAsset(&buf, op.Amount); err != nil {
+		if err := serializeAsset(&buf, op.Amount.String()); err != nil {
 			return nil, err
 		}
 		serializeString(&buf, op.Memo)

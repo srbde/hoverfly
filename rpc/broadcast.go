@@ -52,32 +52,29 @@ func (h *RPCHandler) handleBroadcastTransaction(params json.RawMessage) (any, *r
 
 	if h.strict {
 		for _, rawOp := range tx.Operations {
-			var tuple []json.RawMessage
-			if err := json.Unmarshal(rawOp, &tuple); err == nil && len(tuple) == 2 {
-				var opName string
-				json.Unmarshal(tuple[0], &opName)
-
+			opName, opBody, err := crypto.ParseOperation(rawOp)
+			if err == nil {
 				switch opName {
 				case "transfer":
 					var op struct {
-						From   string `json:"from"`
-						To     string `json:"to"`
-						Amount string `json:"amount"`
+						From   string       `json:"from"`
+						To     string       `json:"to"`
+						Amount crypto.Asset `json:"amount"`
 					}
-					if err := json.Unmarshal(tuple[1], &op); err == nil {
-						if err := h.validateTransfer(op.From, op.To, op.Amount); err != nil {
+					if err := json.Unmarshal(opBody, &op); err == nil {
+						if err := h.validateTransfer(op.From, op.To, op.Amount.String()); err != nil {
 							return nil, &rpcError{Code: -32000, Message: fmt.Sprintf("transaction validation failed: %v", err)}
 						}
 					}
 
 				case "transfer_to_savings":
 					var op struct {
-						From   string `json:"from"`
-						To     string `json:"to"`
-						Amount string `json:"amount"`
+						From   string       `json:"from"`
+						To     string       `json:"to"`
+						Amount crypto.Asset `json:"amount"`
 					}
-					if err := json.Unmarshal(tuple[1], &op); err == nil {
-						if err := h.validateTransfer(op.From, op.To, op.Amount); err != nil {
+					if err := json.Unmarshal(opBody, &op); err == nil {
+						if err := h.validateTransfer(op.From, op.To, op.Amount.String()); err != nil {
 							return nil, &rpcError{Code: -32000, Message: fmt.Sprintf("transaction validation failed: %v", err)}
 						}
 					}
@@ -88,7 +85,7 @@ func (h *RPCHandler) handleBroadcastTransaction(params json.RawMessage) (any, *r
 						Creator        string `json:"creator"`
 						NewAccountName string `json:"new_account_name"`
 					}
-					if err := json.Unmarshal(tuple[1], &op); err == nil {
+					if err := json.Unmarshal(opBody, &op); err == nil {
 						if err := h.validateAccountCreate(op.Creator, op.NewAccountName, op.Fee); err != nil {
 							return nil, &rpcError{Code: -32000, Message: fmt.Sprintf("transaction validation failed: %v", err)}
 						}
@@ -99,32 +96,29 @@ func (h *RPCHandler) handleBroadcastTransaction(params json.RawMessage) (any, *r
 	}
 
 	for _, rawOp := range tx.Operations {
-		var tuple []json.RawMessage
-		if err := json.Unmarshal(rawOp, &tuple); err == nil && len(tuple) == 2 {
-			var opName string
-			json.Unmarshal(tuple[0], &opName)
-
+		opName, opBody, err := crypto.ParseOperation(rawOp)
+		if err == nil {
 			switch opName {
 			case "transfer":
 				var op struct {
-					From   string `json:"from"`
-					To     string `json:"to"`
-					Amount string `json:"amount"`
-					Memo   string `json:"memo"`
+					From   string       `json:"from"`
+					To     string       `json:"to"`
+					Amount crypto.Asset `json:"amount"`
+					Memo   string       `json:"memo"`
 				}
-				if err := json.Unmarshal(tuple[1], &op); err == nil {
-					h.mutateTransfer(op.From, op.To, op.Amount)
+				if err := json.Unmarshal(opBody, &op); err == nil {
+					h.mutateTransfer(op.From, op.To, op.Amount.String())
 				}
 
 			case "transfer_to_savings":
 				var op struct {
-					From   string `json:"from"`
-					To     string `json:"to"`
-					Amount string `json:"amount"`
-					Memo   string `json:"memo"`
+					From   string       `json:"from"`
+					To     string       `json:"to"`
+					Amount crypto.Asset `json:"amount"`
+					Memo   string       `json:"memo"`
 				}
-				if err := json.Unmarshal(tuple[1], &op); err == nil {
-					h.mutateTransferToSavings(op.From, op.To, op.Amount)
+				if err := json.Unmarshal(opBody, &op); err == nil {
+					h.mutateTransferToSavings(op.From, op.To, op.Amount.String())
 				}
 
 			case "comment":
@@ -138,7 +132,7 @@ func (h *RPCHandler) handleBroadcastTransaction(params json.RawMessage) (any, *r
 					Body           string `json:"body"`
 					JSONMetadata   string `json:"json_metadata"`
 				}
-				if err := json.Unmarshal(tuple[1], &op); err == nil {
+				if err := json.Unmarshal(opBody, &op); err == nil {
 					h.mutateComment(op.Author, op.Permlink, op.ParentAuthor, op.ParentPermlink, op.Category, op.Title, op.Body, op.JSONMetadata)
 				}
 
@@ -152,7 +146,7 @@ func (h *RPCHandler) handleBroadcastTransaction(params json.RawMessage) (any, *r
 					Posting        Authority `json:"posting"`
 					MemoKey        string    `json:"memo_key"`
 				}
-				if err := json.Unmarshal(tuple[1], &op); err == nil {
+				if err := json.Unmarshal(opBody, &op); err == nil {
 					h.mutateAccountCreate(op.Creator, op.NewAccountName, op.Fee, op.Owner, op.Active, op.Posting, op.MemoKey)
 				}
 			}

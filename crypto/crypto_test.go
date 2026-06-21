@@ -60,6 +60,54 @@ func TestTransactionSerialization(t *testing.T) {
 	}
 }
 
+func TestTransferSerializationAcceptsAppbaseAsset(t *testing.T) {
+	legacy := `{
+		"ref_block_num": 1234,
+		"ref_block_prefix": 56789,
+		"expiration": "2026-05-25T10:00:00",
+		"operations": [["transfer", {
+			"from": "bob",
+			"to": "cambium.vault",
+			"amount": "1.000 HIVE",
+			"memo": "@bob"
+		}]],
+		"extensions": [],
+		"signatures": []
+	}`
+	appbase := `{
+		"ref_block_num": 1234,
+		"ref_block_prefix": 56789,
+		"expiration": "2026-05-25T10:00:00",
+		"operations": [["transfer", {
+			"from": "bob",
+			"to": "cambium.vault",
+			"amount": {"amount": "1000", "precision": 3, "nai": "@@000000021"},
+			"memo": "@bob"
+		}]],
+		"extensions": [],
+		"signatures": []
+	}`
+
+	serialize := func(input string) []byte {
+		t.Helper()
+		var tx Transaction
+		if err := json.Unmarshal([]byte(input), &tx); err != nil {
+			t.Fatalf("failed to unmarshal transaction: %v", err)
+		}
+		serialized, err := tx.Serialize()
+		if err != nil {
+			t.Fatalf("failed to serialize transaction: %v", err)
+		}
+		return serialized
+	}
+
+	legacyBytes := serialize(legacy)
+	appbaseBytes := serialize(appbase)
+	if hex.EncodeToString(appbaseBytes) != hex.EncodeToString(legacyBytes) {
+		t.Fatalf("appbase and legacy assets serialized differently")
+	}
+}
+
 func TestSignatureRecovery(t *testing.T) {
 	// 1. Generate a random private key
 	privKey, err := secp256k1.GeneratePrivateKey()
