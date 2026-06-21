@@ -81,12 +81,12 @@ func (h *RPCHandler) handleBroadcastTransaction(params json.RawMessage) (any, *r
 
 				case "account_create", "account_create_with_delegation":
 					var op struct {
-						Fee            string `json:"fee"`
-						Creator        string `json:"creator"`
-						NewAccountName string `json:"new_account_name"`
+						Fee            crypto.Asset `json:"fee"`
+						Creator        string       `json:"creator"`
+						NewAccountName string       `json:"new_account_name"`
 					}
 					if err := json.Unmarshal(opBody, &op); err == nil {
-						if err := h.validateAccountCreate(op.Creator, op.NewAccountName, op.Fee); err != nil {
+						if err := h.validateAccountCreate(op.Creator, op.NewAccountName, op.Fee.String()); err != nil {
 							return nil, &rpcError{Code: -32000, Message: fmt.Sprintf("transaction validation failed: %v", err)}
 						}
 					}
@@ -138,16 +138,16 @@ func (h *RPCHandler) handleBroadcastTransaction(params json.RawMessage) (any, *r
 
 			case "account_create", "account_create_with_delegation":
 				var op struct {
-					Fee            string    `json:"fee"`
-					Creator        string    `json:"creator"`
-					NewAccountName string    `json:"new_account_name"`
-					Owner          Authority `json:"owner"`
-					Active         Authority `json:"active"`
-					Posting        Authority `json:"posting"`
-					MemoKey        string    `json:"memo_key"`
+					Fee            crypto.Asset `json:"fee"`
+					Creator        string       `json:"creator"`
+					NewAccountName string       `json:"new_account_name"`
+					Owner          Authority    `json:"owner"`
+					Active         Authority    `json:"active"`
+					Posting        Authority    `json:"posting"`
+					MemoKey        string       `json:"memo_key"`
 				}
 				if err := json.Unmarshal(opBody, &op); err == nil {
-					h.mutateAccountCreate(op.Creator, op.NewAccountName, op.Fee, op.Owner, op.Active, op.Posting, op.MemoKey)
+					h.mutateAccountCreate(op.Creator, op.NewAccountName, op.Fee.String(), op.Owner, op.Active, op.Posting, op.MemoKey)
 				}
 			}
 		}

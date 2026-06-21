@@ -108,6 +108,55 @@ func TestTransferSerializationAcceptsAppbaseAsset(t *testing.T) {
 	}
 }
 
+func TestVerifyAppbaseAccountCreateSignature(t *testing.T) {
+	txJSON := `{
+		"expiration": "2026-06-21T17:44:57",
+		"ref_block_num": 57616,
+		"ref_block_prefix": 1280916113,
+		"operations": [{
+			"type": "account_create_operation",
+			"value": {
+				"fee": {"amount": "3000", "precision": 3, "nai": "@@000000021"},
+				"creator": "bob",
+				"new_account_name": "test2.vault",
+				"owner": {
+					"weight_threshold": 1,
+					"account_auths": [],
+					"key_auths": [["STM8LtkbLTFYwsr2aVLpQYMasA9KefGwvwqXPeWAK1A7VCwyE8Se7", "1"]]
+				},
+				"active": {
+					"weight_threshold": 1,
+					"account_auths": [],
+					"key_auths": [["STM5T9JPBozAJ9mWwqZQjFbCUYzjmowKc7JtTL5SshvRpScVe1ucQ", "1"]]
+				},
+				"posting": {
+					"weight_threshold": 1,
+					"account_auths": [],
+					"key_auths": [["STM5ARFKy2VY8AetN3d125r21QToTgj8gmThufbkVne3DbuNNxKMF", "1"]]
+				},
+				"memo_key": "STM7dqMDsKSYu6nzWjR97X59xzG6b3USqrrqEuS6u8xyqVatpLwoY",
+				"json_metadata": ""
+			}
+		}],
+		"extensions": [],
+		"signatures": [
+			"1f3e191ed65ecf047eb326f8313630a1670d6ff60ac58211b65f620012d3df169d06ad681999a8b9d2d5593cfe3456991d654bec09b6181034b830d7eba534fc46"
+		]
+	}`
+
+	var tx Transaction
+	if err := json.Unmarshal([]byte(txJSON), &tx); err != nil {
+		t.Fatalf("failed to unmarshal account_create transaction: %v", err)
+	}
+	recovered, err := VerifySignatures(&tx, HiveChainID)
+	if err != nil {
+		t.Fatalf("failed to verify account_create transaction: %v", err)
+	}
+	if len(recovered) != 1 || recovered[0] != "STM8UHDhYy7uG1wz6YxAdhA4rFeZbAEmXNuwL46A1orJDRdktAh9j" {
+		t.Fatalf("unexpected recovered keys: %v", recovered)
+	}
+}
+
 func TestSignatureRecovery(t *testing.T) {
 	// 1. Generate a random private key
 	privKey, err := secp256k1.GeneratePrivateKey()

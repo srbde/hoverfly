@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -258,6 +259,103 @@ func serializeAsset(buf *bytes.Buffer, assetStr string) error {
 	return nil
 }
 
+type authority struct {
+	WeightThreshold uint32              `json:"weight_threshold"`
+	AccountAuths    [][]json.RawMessage `json:"account_auths"`
+	KeyAuths        [][]json.RawMessage `json:"key_auths"`
+}
+
+func serializeAuthority(buf *bytes.Buffer, auth authority) error {
+	if err := binary.Write(buf, binary.LittleEndian, auth.WeightThreshold); err != nil {
+		return err
+	}
+	if err := serializeWeightedAuths(buf, auth.AccountAuths, false); err != nil {
+		return err
+	}
+	return serializeWeightedAuths(buf, auth.KeyAuths, true)
+}
+
+func serializeWeightedAuths(buf *bytes.Buffer, auths [][]json.RawMessage, publicKeys bool) error {
+	type weightedAuth struct {
+		name   string
+		weight uint16
+	}
+	parsed := make([]weightedAuth, 0, len(auths))
+	for _, entry := range auths {
+		if len(entry) != 2 {
+			return errors.New("authority entry must contain a name and weight")
+		}
+		var item weightedAuth
+		if err := json.Unmarshal(entry[0], &item.name); err != nil {
+			return fmt.Errorf("invalid authority name: %w", err)
+		}
+		if err := json.Unmarshal(entry[1], &item.weight); err != nil {
+			var weight string
+			if stringErr := json.Unmarshal(entry[1], &weight); stringErr != nil {
+				return fmt.Errorf("invalid authority weight: %w", err)
+			}
+			parsedWeight, parseErr := strconv.ParseUint(weight, 10, 16)
+			if parseErr != nil {
+				return fmt.Errorf("invalid authority weight %q: %w", weight, parseErr)
+			}
+			item.weight = uint16(parsedWeight)
+		}
+		parsed = append(parsed, item)
+	}
+	sort.Slice(parsed, func(i, j int) bool { return parsed[i].name < parsed[j].name })
+
+	writeVarint(buf, uint64(len(parsed)))
+	for _, entry := range parsed {
+		if publicKeys {
+			if err := serializePublicKey(buf, entry.name); err != nil {
+				return err
+			}
+		} else {
+			serializeString(buf, entry.name)
+		}
+		if err := binary.Write(buf, binary.LittleEndian, entry.weight); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func serializePublicKey(buf *bytes.Buffer, publicKey string) error {
+	if strings.HasPrefix(publicKey, "STM") || strings.HasPrefix(publicKey, "TST") {
+		publicKey = publicKey[3:]
+	}
+	decoded, err := base58Decode(publicKey)
+	if err != nil {
+		return err
+	}
+	if len(decoded) != 37 {
+		return fmt.Errorf("invalid public key length: %d", len(decoded))
+	}
+	buf.Write(decoded[:33])
+	return nil
+}
+
+func base58Decode(encoded string) ([]byte, error) {
+	value := big.NewInt(0)
+	base := big.NewInt(58)
+	for _, char := range encoded {
+		index := strings.IndexRune(base58Alphabet, char)
+		if index < 0 {
+			return nil, fmt.Errorf("invalid base58 character: %q", char)
+		}
+		value.Mul(value, base)
+		value.Add(value, big.NewInt(int64(index)))
+	}
+	decoded := value.Bytes()
+	for _, char := range encoded {
+		if char != '1' {
+			break
+		}
+		decoded = append([]byte{0}, decoded...)
+	}
+	return decoded, nil
+}
+
 func serializeOperation(opName string, bodyJSON json.RawMessage) ([]byte, error) {
 	var buf bytes.Buffer
 
@@ -319,6 +417,40 @@ func serializeOperation(opName string, bodyJSON json.RawMessage) ([]byte, error)
 			return nil, err
 		}
 		serializeString(&buf, op.Memo)
+
+	case "account_create":
+		writeVarint(&buf, 9)
+		var op struct {
+			Fee            Asset     `json:"fee"`
+			Creator        string    `json:"creator"`
+			NewAccountName string    `json:"new_account_name"`
+			Owner          authority `json:"owner"`
+			Active         authority `json:"active"`
+			Posting        authority `json:"posting"`
+			MemoKey        string    `json:"memo_key"`
+			JSONMetadata   string    `json:"json_metadata"`
+		}
+		if err := json.Unmarshal(bodyJSON, &op); err != nil {
+			return nil, err
+		}
+		if err := serializeAsset(&buf, op.Fee.String()); err != nil {
+			return nil, err
+		}
+		serializeString(&buf, op.Creator)
+		serializeString(&buf, op.NewAccountName)
+		if err := serializeAuthority(&buf, op.Owner); err != nil {
+			return nil, err
+		}
+		if err := serializeAuthority(&buf, op.Active); err != nil {
+			return nil, err
+		}
+		if err := serializeAuthority(&buf, op.Posting); err != nil {
+			return nil, err
+		}
+		if err := serializePublicKey(&buf, op.MemoKey); err != nil {
+			return nil, err
+		}
+		serializeString(&buf, op.JSONMetadata)
 
 	case "transfer_to_savings":
 		writeVarint(&buf, 32)
