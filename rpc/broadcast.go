@@ -40,15 +40,10 @@ func (h *RPCHandler) handleBroadcastTransaction(params json.RawMessage) (any, *r
 	}
 
 	if len(tx.Signatures) > 0 {
-		chainID := "0000000000000000000000000000000000000000000000000000000000000000"
-		recoveredKeys, err := crypto.VerifySignatures(&tx, chainID)
+		recoveredKeys, err := crypto.VerifySignatures(&tx, crypto.HiveChainID)
 		if err != nil {
-			testnetChainID := "beeab30de373dca1e2f036c30d4970470d0d57d055748a30de53070470d0d57d"
-			recoveredKeys, err = crypto.VerifySignatures(&tx, testnetChainID)
-			if err != nil {
-				log.Warnf("Transaction signature verification FAILED: %v", err)
-				return nil, &rpcError{Code: -32000, Message: fmt.Sprintf("signature verification failed: %v", err)}
-			}
+			log.Warnf("Transaction signature verification FAILED: %v", err)
+			return nil, &rpcError{Code: -32000, Message: fmt.Sprintf("signature verification failed: %v", err)}
 		}
 		log.Infof("Transaction verified successfully. Recovered signing key(s): %v", recoveredKeys)
 	} else {

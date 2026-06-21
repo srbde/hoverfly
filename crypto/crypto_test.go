@@ -88,3 +88,39 @@ func TestSignatureRecovery(t *testing.T) {
 		t.Errorf("expected recovered public key to start with 'STM', got '%s'", pubKeyStr)
 	}
 }
+
+func TestVerifySignaturesUsesHiveChainID(t *testing.T) {
+	txJSON := `{
+		"ref_block_num": 36312,
+		"ref_block_prefix": 3608149636,
+		"expiration": "2026-06-21T15:47:08",
+		"operations": [{
+			"type": "custom_json_operation",
+			"value": {
+				"required_auths": [],
+				"required_posting_auths": ["bob"],
+				"id": "cambium_register",
+				"json": "{\"l2_public_key\":\"444fdbe02002855c51b39c3bf7abe72bbf19207aa4de87eb5abdfe82dbc1917d\"}"
+			}
+		}],
+		"extensions": [],
+		"signatures": [
+			"204c19e3b25c3cc460fc25d806d10aa94dc05e200079f779ef0ece5bc8b855a9de5371499a23deb93e4235d1946030107080337c3130ded4f8765bcfa7e7b9a180"
+		]
+	}`
+
+	var tx Transaction
+	if err := json.Unmarshal([]byte(txJSON), &tx); err != nil {
+		t.Fatalf("failed to unmarshal custom_json transaction: %v", err)
+	}
+
+	recoveredKeys, err := VerifySignatures(&tx, HiveChainID)
+	if err != nil {
+		t.Fatalf("failed to verify transaction signature: %v", err)
+	}
+
+	const expectedPostingKey = "STM7UpcJ97QRgsXkKVmx8QZZJVHihsJBRmDW57QbYWxMg7m5AVcrB"
+	if len(recoveredKeys) != 1 || recoveredKeys[0] != expectedPostingKey {
+		t.Fatalf("expected recovered posting key %s, got %v", expectedPostingKey, recoveredKeys)
+	}
+}

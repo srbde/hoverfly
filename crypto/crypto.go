@@ -18,7 +18,10 @@ import (
 	"golang.org/x/crypto/ripemd160"
 )
 
-const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+const (
+	base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+	HiveChainID    = "beeab0de00000000000000000000000000000000000000000000000000000000"
+)
 
 // Base58Encode encodes a byte slice into a Base58 string.
 func Base58Encode(input []byte) string {
