@@ -9,9 +9,9 @@ Legend:
 - `stateful` means the mock likely needs to read or mutate Hoverfly state, or at least return state-shaped data that changes with seeded accounts, blocks, posts, transactions, market/order data, follow data, or governance data.
 - `static` means a deterministic template response is probably enough for first coverage.
 
-Current first-class coverage: 220/220 OpenAPI methods routed by Hoverfly.
-Current answer coverage: 220/220 OpenAPI methods return a JSON-RPC result through either a first-class route or the OpenAPI example fallback.
-Current useful coverage: 220/220 methods are useful first-class mocks; 0/220 are first-class but partial; 0/220 still rely on the unrouted OpenAPI fallback.
+Current generated OpenAPI fixture coverage: 215/215 known methods have a JSON-RPC example response.
+Additional explicit routes cover selected stateful and developer-facing methods outside that generated fixture set.
+The generated OpenAPI example layer remains an intentional fallback; it is not equivalent to consensus-accurate or stateful behavior.
 
 ## `account_by_key_api` (1/1 done)
 

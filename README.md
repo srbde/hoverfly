@@ -8,7 +8,7 @@ If you are developing or testing Hive applications, bots, SDKs, or scripts, Hove
 
 ---
 
-**Mock-First and Stateful:** Hoverfly is written in Go, powered by a high-performance **BadgerDB** state engine, and currently provides developer-useful first-class responses for **220/220 Hive OpenAPI JSON-RPC methods**.
+**Mock-First and Stateful:** Hoverfly is written in Go, powered by a high-performance **BadgerDB** state engine, and provides explicit stateful handlers plus generated responses for **215 documented Hive OpenAPI methods**.
 
 ---
 
@@ -18,10 +18,10 @@ The Hive ecosystem deserves testing infrastructure that is fast, local, and reli
 
 ### 🔌 Complete Hive JSON-RPC Mock Coverage
 
-Hoverfly tracks the live Hive OpenAPI method surface and routes every known method through a first-class mock handler:
+Hoverfly tracks the documented Hive OpenAPI method surface and answers known methods locally:
 
-- **220/220 OpenAPI Methods Routed**: `condenser_api`, `database_api`, `account_history_api`, `bridge`, `wallet_bridge_api`, `rc_api`, `market_history_api`, `debug_node_api`, and related API groups all answer locally.
-- **No Unrouted Fallbacks Required**: The generic OpenAPI example layer exists as a safety net, but current documented coverage is first-class and developer-useful.
+- **215 Generated OpenAPI Methods**: `condenser_api`, `database_api`, `account_history_api`, `bridge`, `wallet_bridge_api`, `rc_api`, `market_history_api`, `debug_node_api`, and related API groups answer locally.
+- **Explicit Stateful Routes Plus Fixtures**: Important account, block, content, broadcast, history, and debug paths use local state; other documented methods currently return generated OpenAPI-shaped fixtures or stable empty results.
 - **Bridge/Hivemind Shapes Included**: Posts, profiles, discussions, communities, ranked posts, notification counts, and relationship/list endpoints return realistic local shapes instead of only echoing docs examples.
 
 See [`HIVE_API_CHECKLIST.md`](HIVE_API_CHECKLIST.md) for the method-by-method coverage notes.
@@ -67,7 +67,7 @@ Hoverfly is the local testing companion to **[Anther](https://github.com/srbde/h
 
 ## 🚀 Quick Start
 
-Requires Go >= 1.20.
+Requires Go >= 1.26.3.
 
 ### Installation
 
@@ -76,7 +76,7 @@ Clone the repository and build:
 ```bash
 git clone https://github.com/srbde/hoverfly
 cd hoverfly
-go build -o hoverfly main.go
+go build -o hoverfly .
 ```
 
 ### Running the Server
@@ -107,10 +107,10 @@ Deletes the local database directory on boot:
 
 #### Custom Bind Port
 
-By default, Hoverfly binds to port `8090` (matching default Hive nodes). Change it using:
+By default, Hoverfly binds to `127.0.0.1:8090` (matching the default Hive node port without exposing the mock to the network). Change the host or port using:
 
 ```bash
-./hoverfly --port 8080
+./hoverfly --host 127.0.0.1 --port 8080
 ```
 
 ---
@@ -119,28 +119,29 @@ By default, Hoverfly binds to port `8090` (matching default Hive nodes). Change 
 
 | Flag       | Type     | Default | Description                                               |
 | ---------- | -------- | ------- | --------------------------------------------------------- |
+| `--host`   | `string` | `127.0.0.1` | Host/interface to bind the HTTP JSON-RPC server        |
 | `--port`   | `int`    | `8090`  | Port to bind the HTTP JSON-RPC server                     |
 | `--db`     | `string` | `""`    | Directory path to BadgerDB. If empty, runs in-memory.     |
 | `--reset`  | `bool`   | `false` | If true, deletes the BadgerDB directory before booting.   |
 | `--debug`  | `bool`   | `false` | Enables verbose request and state-change logging.         |
-| `--strict` | `bool`   | `false` | Runs server in strict mode, validating transaction state. |
+| `--strict` | `bool`   | `false` | Validates selected transaction state instead of permissive mutation. |
 
 ---
 
 ## 📡 API Coverage
 
-Hoverfly currently provides developer-useful first-class mocks for **220/220** Hive OpenAPI JSON-RPC methods.
+Hoverfly currently provides explicit stateful handlers plus generated responses for **215 documented** Hive OpenAPI JSON-RPC methods. Behavior varies by method; this is not consensus-node emulation.
 
 | Area                   | Coverage | Notes                                              |
 | ---------------------- | -------- | -------------------------------------------------- |
-| Core chain APIs        | 100%     | Blocks, dynamic properties, config, version, TAPOS |
-| Account APIs           | 100%     | Lookup, lists, key references, RC, balances        |
-| Broadcast APIs         | 100%     | Saves transactions and mutates supported state     |
-| Content APIs           | 100%     | Posts, replies, discussions, votes, blogs, search  |
-| Bridge/Hivemind APIs   | 100%     | Profiles, communities, ranked posts, notifications |
-| History APIs           | 100%     | Transactions, account history, ops-in-block        |
-| Debug APIs             | 100%     | Local block generation and head-state inspection   |
-| Market/governance APIs | 100%     | Stable local templates and empty-state responses   |
+| Core chain APIs        | Implemented | Blocks, dynamic properties, config, version, TAPOS |
+| Account APIs           | Implemented | Lookup, lists, key references, RC, balances        |
+| Broadcast APIs         | Partial     | Saves transactions and mutates supported state     |
+| Content APIs           | Partial     | Posts, replies, discussions, votes, blogs, search  |
+| Bridge/Hivemind APIs   | Partial     | Profiles, communities, ranked posts, notifications |
+| History APIs           | Implemented | Transactions, account history, ops-in-block        |
+| Debug APIs             | Implemented | Local block generation and head-state inspection   |
+| Market/governance APIs | Fixture     | Stable local templates and empty-state responses   |
 
 Hoverfly is not a consensus node and does not run P2P networking, witness scheduling, or real economics. It is intentionally a local app-development target: fast enough for tests, stateful enough for scripts, and compatible enough for SDK integration work.
 
@@ -255,7 +256,7 @@ go test ./...
 go fmt ./...
 
 # Compile release binary
-go build -ldflags="-s -w" -o hoverfly main.go
+go build -ldflags="-s -w" -o hoverfly .
 ```
 
 ---

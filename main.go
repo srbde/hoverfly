@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -12,6 +16,7 @@ import (
 )
 
 func main() {
+	host := flag.String("host", "127.0.0.1", "host/interface to listen on")
 	port := flag.Int("port", 8090, "port to listen on")
 	dbPath := flag.String("db", "", "path to BadgerDB directory (default is in-memory ephemeral)")
 	reset := flag.Bool("reset", false, "reset/wipe the database directory on startup")
@@ -63,16 +68,27 @@ func main() {
 	fmt.Println("=====================================================")
 
 	// 3. Start Background Block Ticker (simulate block generation every 3 seconds)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	go func() {
 		ticker := time.NewTicker(3 * time.Second)
-		for range ticker.C {
-			props, err := s.GetDynamicProperties()
-			if err == nil && props != nil {
-				props.HeadBlockNumber++
-				props.LastIrreversibleBlockNum = props.HeadBlockNumber - 10
-				props.Time = time.Now().UTC().Format("2006-01-02T15:04:05")
-				props.HeadBlockID = state.BlockID(props.HeadBlockNumber)
-				s.SaveDynamicProperties(props)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				props, err := s.GetDynamicProperties()
+				if err == nil && props != nil {
+					props.HeadBlockNumber++
+					props.LastIrreversibleBlockNum = props.HeadBlockNumber - 10
+					props.Time = time.Now().UTC().Format("2006-01-02T15:04:05")
+					props.HeadBlockID = state.BlockID(props.HeadBlockNumber)
+					if err := s.SaveDynamicProperties(props); err != nil {
+						log.Warnf("Block Generator: failed to save dynamic properties: %v", err)
+					}
+				}
 			}
 		}
 	}()
@@ -81,7 +97,8 @@ func main() {
 	// 4. Set up JSON-RPC Handler
 	handler := rpc.NewRPCHandler(s, *debug, *strict)
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			w.Header().Set("Content-Type", "text/plain")
 			w.WriteHeader(http.StatusOK)
@@ -95,10 +112,28 @@ func main() {
 		handler.ServeHTTP(w, r)
 	})
 
-	log.Infof("Server: Listening on http://localhost:%d", *port)
+	server := &http.Server{
+		Addr:              fmt.Sprintf("%s:%d", *host, *port),
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Warnf("Server: graceful shutdown failed: %v", err)
+		}
+	}()
+
+	log.Infof("Server: Listening on http://%s:%d", *host, *port)
 	fmt.Println("=====================================================")
 
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Fatal: HTTP server error: %v", err)
 	}
 }
