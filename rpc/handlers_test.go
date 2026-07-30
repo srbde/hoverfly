@@ -752,3 +752,25 @@ func TestOpenAPIMockResponses(t *testing.T) {
 		}
 	}
 }
+
+func TestServeHTTPRejectsOversizedBody(t *testing.T) {
+	s, err := state.NewState("", false)
+	if err != nil {
+		t.Fatalf("failed to create state: %v", err)
+	}
+	defer s.Close()
+
+	handler := NewRPCHandler(s, false, false)
+	body := bytes.Repeat([]byte("x"), maxRPCBodySize+1)
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected JSON-RPC error response with HTTP 200, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("Parse error reading request body")) {
+		t.Fatalf("expected oversized body parse error, got %s", w.Body.String())
+	}
+}

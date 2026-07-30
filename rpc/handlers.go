@@ -39,6 +39,8 @@ type RPCHandler struct {
 	routes map[string]rpcMethodFunc
 }
 
+const maxRPCBodySize = 4 << 20
+
 func NewRPCHandler(s *state.State, debug bool, strict bool) *RPCHandler {
 	h := &RPCHandler{
 		state:  s,
@@ -386,6 +388,7 @@ func (h *RPCHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxRPCBodySize)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeError(w, nil, -32700, "Parse error reading request body")
